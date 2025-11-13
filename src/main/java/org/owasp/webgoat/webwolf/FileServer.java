@@ -71,12 +71,18 @@ public class FileServer {
     destinationDir.mkdirs();
     // DO NOT use multipartFile.transferTo(), see
     // https://stackoverflow.com/questions/60336929/java-nio-file-nosuchfileexception-when-file-transferto-is-called
+    String originalFileName = multipartFile.getOriginalFilename();
+    if (originalFileName == null || !isValidFilename(originalFileName)) {
+      throw new IllegalArgumentException("Invalid filename");
+    }
+    // Only use the file name part, ignore any path (defense in depth)
+    String safeFileName = java.nio.file.Paths.get(originalFileName).getFileName().toString();
     try (InputStream is = multipartFile.getInputStream()) {
-      var destinationFile = destinationDir.toPath().resolve(multipartFile.getOriginalFilename());
+      var destinationFile = destinationDir.toPath().resolve(safeFileName);
       Files.deleteIfExists(destinationFile);
       Files.copy(is, destinationFile);
     }
-    log.debug("File saved to {}", new File(destinationDir, multipartFile.getOriginalFilename()));
+    log.debug("File saved to {}", new File(destinationDir, safeFileName));
 
     return new ModelAndView(
         new RedirectView("files", true),
@@ -122,6 +128,11 @@ public class FileServer {
       FileTime creationTime = (FileTime) Files.getAttribute(file.toPath(), "creationTime");
       ZonedDateTime zonedDateTime = creationTime.toInstant().atZone(timezone.toZoneId());
       return dateTimeFormatter.format(zonedDateTime);
+
+  // Validates that the filename does not contain path separators or ".."
+  private boolean isValidFilename(String filename) {
+    return !(filename.contains("..") || filename.contains("/") || filename.contains("\\"));
+  }
     } catch (IOException e) {
       return "unknown";
     }
